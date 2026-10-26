@@ -18,6 +18,9 @@ Replaces the official Pink-IK soma_to_g1.py: no part of its solution is used.
     side uses the real object. The ground points keep the feet on the ground: without them, scaling about the
     object rather than the ground leaves the robot floating. OmniRetarget instead scales the whole scene, object
     trajectory included, which the leaderboard does not allow.
+  * The per-frame SQP solution jitters (leg joint acceleration ~6x the official retarget's), which the SONIC
+    tracker cannot follow. So root position, root orientation and the 29 joints are low-passed with a zero-phase
+    4th-order Butterworth at 3 Hz (filtfilt); this changes joints by ~0.01 rad RMS.
   * Dex3 finger joints stay at 0 (open), like the official retarget; the RL policy's finger residual moves them.
 """
 
@@ -34,6 +37,7 @@ sys.path.insert(0, str(HERE.parent / "robotic_grounding"))
 import numpy as np
 import trimesh
 import yourdfpy
+from scipy.signal import butter, filtfilt
 from scipy.spatial.transform import Rotation
 
 from human_world import human_in_robot_world
@@ -83,6 +87,7 @@ JOINTS_MAPPING = {
     "RightFoot": "right_ankle_intermediate_1_link",
 }
 TOE_NAMES = ["LeftToeBase", "RightToeBase"]
+SMOOTHING_CUTOFF_HZ = 3.0
 GROUND_GRID = np.array([[x, y, 0.0] for x in np.linspace(-0.6, 0.6, 5) for y in np.linspace(-0.6, 0.6, 5)])
 
 folder, scene_dir, motion_root = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
@@ -182,6 +187,16 @@ retargeter.retarget_motion(
 print(f"infeasible SQP steps recovered by fallback: {getattr(retargeter, 'infeasible_fallbacks', 0)}")
 qpos = np.load(result_npz)["qpos"]
 assert qpos.shape[0] == frames, (qpos.shape, frames)
+
+# Zero-phase low-pass of the robot part: root position, root quaternion (sign-continuous), 29 joints.
+b, a = butter(4, SMOOTHING_CUTOFF_HZ / (FPS / 2))
+root_quat = qpos[:, 3:7].copy()
+for frame in range(1, frames):
+    if np.dot(root_quat[frame], root_quat[frame - 1]) < 0:
+        root_quat[frame] = -root_quat[frame]
+qpos[:, :3] = filtfilt(b, a, qpos[:, :3], axis=0)
+qpos[:, 3:7] = filtfilt(b, a, root_quat, axis=0)
+qpos[:, 7:36] = filtfilt(b, a, qpos[:, 7:36], axis=0)
 
 # Robot motion in the official 43-joint layout (fingers 0), palm poses by FK of the G1 + Dex3 URDF.
 mj_joint_names = [retargeter.robot_model.joint(j).name for j in range(1, 30)]
