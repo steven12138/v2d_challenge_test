@@ -861,21 +861,33 @@ class InteractionMeshRetargeter:
     ):
         """Iterate the solver for multiple iterations."""
         last_cost = np.inf
+        cost = np.inf
         for _ in range(n_iter):
             q_a_n_last = q_n[self.q_a_indices]
-            q_n, cost = self.solve_single_iteration(
-                q_locked=q_locked,
-                q_a_n_last=q_a_n_last,
-                q_t_last=q_t_last,
-                target_laplacian=target_laplacian,
-                adj_list=adj_list,
-                obj_pts_local=obj_pts_local,
-                foot_sticking=foot_sticking,
-                q_a_nominal=q_a_nominal,
-                w_nominal_tracking=w_nominal_tracking,
-                init_t=init_t,
-                frame_idx=frame_idx,
-            )
+            # tr2 patch: an infeasible SQP step (conflicting hard constraints) used to abort the whole sequence.
+            # Retry without foot sticking; if that fails too, keep the robot pose and move on.
+            for sticking in (foot_sticking, {key: False for key in foot_sticking}):
+                try:
+                    q_n, cost = self.solve_single_iteration(
+                        q_locked=q_locked,
+                        q_a_n_last=q_a_n_last,
+                        q_t_last=q_t_last,
+                        target_laplacian=target_laplacian,
+                        adj_list=adj_list,
+                        obj_pts_local=obj_pts_local,
+                        foot_sticking=sticking,
+                        q_a_nominal=q_a_nominal,
+                        w_nominal_tracking=w_nominal_tracking,
+                        init_t=init_t,
+                        frame_idx=frame_idx,
+                    )
+                    break
+                except RuntimeError:
+                    self.infeasible_fallbacks = getattr(self, "infeasible_fallbacks", 0) + 1
+            else:
+                q_keep = np.copy(q_locked)
+                q_keep[self.q_a_indices] = q_a_n_last
+                return q_keep, cost
             if np.isclose(cost, last_cost):
                 break
             last_cost = cost

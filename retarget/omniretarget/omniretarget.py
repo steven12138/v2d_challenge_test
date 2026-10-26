@@ -179,6 +179,7 @@ retargeter.retarget_motion(
     original=True,
     dest_res_path=str(result_npz),
 )
+print(f"infeasible SQP steps recovered by fallback: {getattr(retargeter, 'infeasible_fallbacks', 0)}")
 qpos = np.load(result_npz)["qpos"]
 assert qpos.shape[0] == frames, (qpos.shape, frames)
 
