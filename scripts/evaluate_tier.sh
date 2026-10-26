@@ -14,7 +14,7 @@ folder = Path(sys.argv[1])
 for episode, checkpoint in json.loads((folder / "all.json").read_text()).items():
     (folder / f"episode_{int(episode):06d}.json").write_text(json.dumps({episode: checkpoint}) + "\n")
 PY
-for map in "$3"/checkpoints/episode_*.json; do
+for map in "$3"_checkpoints/episode_*.json; do
     name=$(basename "$map" .json)
     [[ -f $3/$name.parquet ]] && { echo "skip $name (evaluated)"; continue; }
     echo "$name: $(sbatch --parsable --job-name="ev-${name#episode_}" slurm/evaluate.sbatch "$map" "$3")"
