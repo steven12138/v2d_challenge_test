@@ -1,0 +1,1 @@
+official zip https://nvidia-isaac.github.io/video_to_data/v2d_challenge/assets/v2d_submission_kit.zip sha256 8d2bce64ecab6da4eee938fe2859bd60e767535af30068b386e2dc20a72cf43e fetched 2026-10-20

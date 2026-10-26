@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+# Reference clone of nvidia-isaac/video_to_data @ 8c778f9 (1.6 GB with LFS).
+external/video_to_data/
+# Downloaded by retarget/setup_soma_assets.py.
+retarget/robotic_grounding/robotic_grounding/assets/body_models/soma/*
+!retarget/robotic_grounding/robotic_grounding/assets/body_models/soma/.gitignore
+.venv/
+work/
+videos/
+# Reference clone of amazon-far/holosoma (OmniRetarget).
+external/holosoma/
