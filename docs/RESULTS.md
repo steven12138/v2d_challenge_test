@@ -28,25 +28,38 @@ RT right-hand contact recall, and foot sliding on SB.
 Keyframes (3 views): `videos/keyframes/snack_box_official_vs_omni.png`. In the official SB motion the forearms sink
 into the box at frames 193, 239, 720 and 774; with OmniRetarget the palms rest on the box sides.
 
-## Stage 2: RL (FlashCHORD)
+## Stage 2: RL (FlashCHORD), 32-world kit evaluator
 
-32-world kit evaluator (`slurm/eval_worlds.sbatch`), official recipe, 350M steps. 1-world scores are very noisy:
-RT A40 scored MPPE 3.4 cm on one world but averages 17.5 cm over 32.
+`slurm/eval_worlds.sbatch` runs the official evaluator over 32 worlds (1-world scores are very noisy: RT A40 scored
+MPPE 3.4 cm on one world but averages 17.5 cm). All runs: 350M steps, seed 42.
 
-| Run | AUC | SP-SR | MP-SR | MPPE | pos err | ori err |
+| Run | retarget | reward | AUC | SP-SR | MP-SR | MPPE |
 |---|---|---|---|---|---|---|
-| RT baseline, A40 | 0.358 | 0.69 | 0 | 17.5 cm | 17.4 cm | 25.7° |
-| RT baseline, A100, replay 5M | 0.324 | 0.59 | 0 | 13.7 cm | 13.6 cm | 33.1° |
-| SB baseline, A100 | 0.303 | 0.31 | 0 | 17.7 cm | 17.5 cm | 24.3° |
+| SB baseline (A100) | Pink IK | official | 0.303 | 0.31 | 0.00 | 17.7 cm |
+| SB omni v1 | OmniRetarget refining Pink | official | 0.430 | 0.69 | 0.00 | 9.9 cm |
+| **SB kp** | Pink IK | **object keypoints** | **0.722** | **0.91** | **0.78** | **4.2 cm** |
+| RT baseline (A40 / A100) | Pink IK | official | 0.358 / 0.342 | 0.69 / 0.97 | 0 / 0 | 17.5 / 7.2 cm |
+| **RT kp** | Pink IK | **object keypoints** | **0.788** | 0.91 | **0.84** | 10.0 cm |
 
-Object-keypoint reward (`g1_recon_body_kp_flash_sac`), training metrics at 60-80M steps on SB (VOC 0.75-0.5):
+Conclusions:
+1. The point-cloud object reward (ResMimic) is the largest gain: AUC more than doubles, and MP-SR goes from 0 to
+   ~0.8 on both sequences.
+2. OmniRetarget refining the Pink-IK solution also helps with the official reward (SB SP-SR 0.31 -> 0.69).
+3. Standalone OmniRetarget (no Pink IK) trains badly. Its legs deviate ~16 deg RMS from a human-like solution and
+   SONIC cannot track them: pelvis error 0.15 m vs 0.06 m, and ~60% of episodes end on palm deviation. Smoothing
+   the solution or fixing the ground points in the world does not change this.
+   (training metrics: `evaluate/compare_runs.py`, `series.py`)
+4. Not yet tested: OmniRetarget refine + object keypoints (`omniretarget.py ... <official parquet>`), which
+   combines 1 and 2.
 
-| Run | object pos err | object ori err | reaches end | object terminations |
-|---|---|---|---|---|
-| baseline s1 / s2 | 3.9 / 3.9 cm | 0.061 / 0.059 rad | 71 / 73% | 16 / 16% |
-| keypoints s42 / s1 / s2 | **2.3 / 2.1 / 2.2 cm** | **0.051 / 0.044 / 0.045 rad** | 71 / 76 / 76% | 15 / 10 / 11% |
+Early training signal (`metrics.jsonl`), SB at 60-80M steps: the keypoint reward halves the object position error
+over 3 seeds (2.1-2.3 cm vs 3.9 cm).
 
-## Tier 1 submission run
+## Tier 1 batches
 
-All 30 sequences: OmniRetarget motion + object-keypoint recipe, seed 42, Grace A100 (`scripts/launch_tier.sh`,
-work/tier1/sub_omni_kp). Code: github.com/steven12138/v2d_challenge_test.
+| Batch | Status |
+|---|---|
+| `sub_omni_kp` (standalone OmniRetarget + kp) | cancelled at 210-330M steps (1/30 final): poor training metrics |
+| `sub_omni3_kp` (+ 3 Hz smoothing) | cancelled at 150-210M steps |
+| `sub_pink_kp` (Pink + kp) | only the 2 test sequences (above) |
+| A/B launcher `scripts/launch_tier1_ab.sh` | ready, not started: A = Pink + kp, B = OmniRetarget refine + kp |
