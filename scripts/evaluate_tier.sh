@@ -1,12 +1,12 @@
 #!/bin/bash
 # Evaluate every trained policy of a tier with the official kit, one Grace A100 job per episode in parallel.
-#   scripts/evaluate_tier.sh <dataset_dir> <train_dir> <results_dir>
+#   scripts/evaluate_tier.sh <dataset_dir> <train_dir> <results_dir> [newest]
 # Writes <results_dir>/episode_NNNNNN.{parquet,json} (the packer's input) and <results_dir>_checkpoints/*.json (outside <results_dir>: the packer reads every JSON in it).
 set -euo pipefail
 cd /scratch/user/the/v2d/t2/code
 source slurm/env.sh rg
 mkdir -p "$3_checkpoints"
-python evaluate/checkpoints.py "$1" "$2" "$3_checkpoints/all.json"
+python evaluate/checkpoints.py "$1" "$2" "$3_checkpoints/all.json" ${4:-}
 python - "$3_checkpoints" <<'PY'
 import json, sys
 from pathlib import Path
