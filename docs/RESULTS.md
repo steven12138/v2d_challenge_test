@@ -49,8 +49,11 @@ Conclusions:
    SONIC cannot track them: pelvis error 0.15 m vs 0.06 m, and ~60% of episodes end on palm deviation. Smoothing
    the solution or fixing the ground points in the world does not change this.
    (training metrics: `evaluate/compare_runs.py`, `series.py`)
-4. Not yet tested: OmniRetarget refine + object keypoints (`omniretarget.py ... <official parquet>`), which
-   combines 1 and 2.
+4. OmniRetarget refine (`omniretarget.py ... <official parquet>`: Pink-IK solution as init and as the base/leg
+   nominal, plus ground lattice, smoothing and non-penetration). Kinematics: penetration without fingers 1.2% (SB) /
+   3.0% (RT), no ground penetration, and legs within 2.9 / 1.8 deg RMS of the Pink-IK solution, with leg
+   acceleration like the official motion (p95 3.4 / 3.7 vs 3.7 / 4.6). Standalone deviates 15 deg with p95 24.4.
+   It is the expected best retargeter; training with object keypoints is still to run.
 
 Early training signal (`metrics.jsonl`), SB at 60-80M steps: the keypoint reward halves the object position error
 over 3 seeds (2.1-2.3 cm vs 3.9 cm).
