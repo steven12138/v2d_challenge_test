@@ -1,7 +1,13 @@
 """Retarget a SOMA-X sequence to G1 with OmniRetarget's interaction-mesh solver (arXiv 2509.26633, holosoma).
-Replaces the official Pink-IK soma_to_g1.py: no part of its solution is used.
 
-    python retarget/omniretarget/omniretarget.py <soma_dir>/sequence_id=<seq> <scene_dir> <motion_root>
+    python retarget/omniretarget/omniretarget.py <soma_dir>/sequence_id=<seq> <scene_dir> <motion_root> \
+        [<official Pink-IK data.parquet>]
+
+With the official parquet (the recommended mode), the Pink-IK solution of soma_to_g1.py initialises the first
+frame and is the nominal for the floating base and the legs (holosoma's NOMINAL_TRACKING_INDICES), so OmniRetarget
+refines it: it removes object/ground penetration and keeps the human-object relations, while the legs stay
+human-like. Without the nominal, the legs drift ~16 deg RMS from that solution, and the SONIC tracker cannot
+follow them (pelvis error 0.15 m vs 0.06 m in training).
 
 <scene_dir> comes from build_scene.py. This writes the FlashCHORD training motion
     <motion_root>/whole_body/soma/sequence_id=<seq>/robot_name=g1/data.parquet
@@ -12,7 +18,8 @@ Replaces the official Pink-IK soma_to_g1.py: no part of its solution is used.
     its constant object ground lift (<= 1 cm). So the object trajectory is the official one up to a rigid offset,
     which the scorer's frame conversion requires.
   * Each frame solves OmniRetarget's SQP. It preserves the Laplacian coordinates of an interaction mesh of 15 body
-    points, 100 object surface points and a 5 x 5 ground grid under the human root, all in the object frame,
+    points, 100 object surface points and the nodes of a world-fixed ground lattice near the human root, all in
+    the object frame,
     under hard constraints: object and ground non-penetration, foot sticking, and joint limits.
   * As in OmniRetarget, the demonstration side of the mesh is scaled by robot height / human height, and the robot
     side uses the real object. The ground points keep the feet on the ground: without them, scaling about the
@@ -88,9 +95,10 @@ JOINTS_MAPPING = {
 }
 TOE_NAMES = ["LeftToeBase", "RightToeBase"]
 SMOOTHING_CUTOFF_HZ = 3.0
-GROUND_GRID = np.array([[x, y, 0.0] for x in np.linspace(-0.6, 0.6, 5) for y in np.linspace(-0.6, 0.6, 5)])
+GROUND_SPACING, GROUND_RADIUS = 0.3, 0.75  # ground lattice (m), and the radius around the human root it covers
 
 folder, scene_dir, motion_root = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
+official_path = Path(sys.argv[4]) if len(sys.argv) > 4 else None
 sequence_id = folder.name.removeprefix("sequence_id=")
 sequence_dir = motion_root / "whole_body" / "soma" / f"sequence_id={sequence_id}"
 
@@ -134,11 +142,14 @@ object_points = np.asarray(trimesh.sample.sample_surface(mesh, 100, seed=42)[0])
 demo_object_poses = object_poses.copy()
 demo_object_poses[:, :3] *= scale
 
-# Object surface points plus ground points under the human root, in the object frame of every frame.
+# Object surface points plus ground points, in the object frame of every frame. The ground points are the nodes of a
+# lattice fixed in the world, those near the human root: points that moved with the root would drag the feet along.
 root_xy = human_joints[:, joint_names.index("Hips"), :2]
+offsets = np.arange(-GROUND_RADIUS, GROUND_RADIUS + 1e-9, GROUND_SPACING)
 points_local = []
 for frame in range(frames):
-    ground = GROUND_GRID + np.array([root_xy[frame, 0], root_xy[frame, 1], 0.0])
+    centre = np.round(root_xy[frame] / GROUND_SPACING) * GROUND_SPACING
+    ground = np.array([[centre[0] + x, centre[1] + y, 0.0] for x in offsets for y in offsets])
     points_local.append(np.vstack([object_points, (ground - object_pos[frame]) @ object_T[frame, :3, :3]]))
 
 scene_xml = scene_dir / "g1_29dof_spherehand_w_object.xml"
@@ -172,6 +183,18 @@ q_init[:3] = [hips[0], hips[1], PELVIS_HEIGHT]
 q_init[3:7] = Rotation.from_euler("z", yaw).as_quat(scalar_first=True)
 q_init[-7:] = object_poses[0]
 
+# Optional nominal: the official Pink-IK solution in the solver's MuJoCo qpos layout (object part = ours).
+q_nominal = None
+if official_path is not None:
+    import pyarrow.parquet as pq
+
+    official = pq.read_table(official_path).to_pylist()[0]
+    official_joints = dict(zip(official["robot_joint_names"], np.asarray(official["robot_joint_positions"]).T))
+    body_names = [retargeter.robot_model.joint(j).name for j in range(1, 30)]
+    q_nominal = np.concatenate([np.asarray(official["robot_root_position"]), np.asarray(official["robot_root_wxyz"]),
+                                np.stack([official_joints[name] for name in body_names], 1), object_poses], axis=1)
+    q_init = q_nominal[0].copy()
+
 result_npz = sequence_dir / "omniretarget_qpos.npz"
 retargeter.retarget_motion(
     human_joint_motions=human_joints * scale,
@@ -181,6 +204,7 @@ retargeter.retarget_motion(
     object_points_local=points_local,
     foot_sticking_sequences=foot_sticking,
     q_a_init=q_init[retargeter.q_a_indices],
+    q_nominal_list=q_nominal,
     original=True,
     dest_res_path=str(result_npz),
 )

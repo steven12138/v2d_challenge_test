@@ -1,5 +1,5 @@
 #!/bin/bash
-# sbatch slurm/omniretarget.sbatch <soma_dir>/sequence_id=<seq> <scene_root> <motion_root>
+# sbatch slurm/omniretarget.sbatch <soma_dir>/sequence_id=<seq> <scene_root> <motion_root> [<official data.parquet>]
 # Builds the MuJoCo scene (<scene_root>/<seq>/) and retargets with OmniRetarget (CPU only, ~3-10 min per sequence).
 #SBATCH --job-name=t2-omni
 #SBATCH --partition=short
@@ -15,4 +15,4 @@ source slurm/env.sh rg
 seq=${1##*/sequence_id=}
 
 python retarget/omniretarget/build_scene.py "$1/reconstructed_mesh/output_aligned.glb" "$2/$seq"
-python retarget/omniretarget/omniretarget.py "$1" "$2/$seq" "$3"
+python retarget/omniretarget/omniretarget.py "$1" "$2/$seq" "$3" ${4:+"$4"}
