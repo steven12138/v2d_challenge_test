@@ -66,3 +66,13 @@ over 3 seeds (2.1-2.3 cm vs 3.9 cm).
 | `sub_omni3_kp` (+ 3 Hz smoothing) | cancelled at 150-210M steps |
 | `sub_pink_kp` (Pink + kp) | only the 2 test sequences (above) |
 | A/B launcher `scripts/launch_tier1_ab.sh` | ready, not started: A = Pink + kp, B = OmniRetarget refine + kp |
+
+## Leaderboard submissions
+
+| Date | Track | Method | Code | AUC | SP-SR | MP-SR | MPPE |
+|---|---|---|---|---|---|---|---|
+| 2026-10-26 | Track 2 Tier 1 | standalone OmniRetarget + object keypoints, newest checkpoints (210-350M steps) | `95797b2` | 0.2966 | 0.1333 | 0.0667 | 49.40 cm |
+
+Kaggle scores equal the local packer scores. The receipt is at Grace `work/tier1/submission/receipt_omni_kp_1.json`.
+Expected next: Pink IK (or OmniRetarget refine) + object keypoints. On the test sequences this scored AUC 0.72-0.79
+and MP-SR 0.78-0.84 over 32 worlds.
