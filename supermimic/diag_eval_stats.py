@@ -11,6 +11,7 @@ import sys
 
 os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import warp as wp
@@ -29,6 +30,7 @@ from flash_chord.training.checkpoint_metadata import checkpoint_config
 from flash_chord.training.environment import WarpRLEnv
 from flash_chord.training.flash_sac.config import TrainingConfig
 from flash_chord.training.flash_sac.evaluation import load_policy_for_inference
+from flash_chord.training.flash_sac.network import Actor
 
 WORLDS = 64
 
@@ -64,9 +66,18 @@ def build_eval_env(ck, worlds=WORLDS):
     return env, jax_env, setup, training
 
 
+def feed_forward(knots, knot_frames, frames):
+    """Pre-tanh action offset per frame of a table with one knot every `knot_frames` frames."""
+    x = np.arange(frames) / knot_frames
+    i = np.floor(x).astype(int)
+    w = (x - i)[:, None]
+    return knots[i] * (1.0 - w) + knots[np.minimum(i + 1, len(knots) - 1)] * w
+
+
 def main(ckpts):
+    specs = [tuple((c.split("::") + [""])[:2]) for c in ckpts]  # <policy.safetensors>[::<feed-forward table.npz>]
     with wp.ScopedDevice("cuda:0"):
-        env, jax_env, setup, training = build_eval_env(ckpts[0])
+        env, jax_env, setup, training = build_eval_env(specs[0][0])
         F = setup.reference.num_frames
         nb = env.model.body_count // WORLDS
         obj, pelvis = int(env.command.layout.body_ids[0]), int(env.observation_strategy.pelvis_body_id)
@@ -74,15 +85,25 @@ def main(ckpts):
         ref_q = np.asarray(setup.reference.object_body_quat_w(), np.float32)[:, 0][:, [1, 2, 3, 0]]
         ref_pose = np.concatenate([ref_p, ref_q], -1)[:, None].astype(np.float64)
         vertices = sample_object_vertices(env.scene)
-        for ck in ckpts:
+        for spec in specs:
+            ck, ff_path = spec
             env.reset(frame_id=0)
             obs = jnp.asarray(env.observation.numpy().reshape(WORLDS, env.observation_dim))
             actor, act_fn, key, _ = load_policy_for_inference(ck, training, obs, env.action.action_dim, deterministic=True)
+            if ff_path:  # the policy plus a feed-forward table of pre-tanh action offsets (PLAN.md 13.22.6)
+                table = np.load(ff_path)
+                offsets = jnp.asarray(feed_forward(table[os.environ.get("FF_KEY", "ema_ff")], int(table["knot_frames"]), F), jnp.float32)
+                module = Actor(action_dim=43, config=training.network, dtype=jnp.float32)
+                variables = {"params": actor.params, "batch_stats": actor.batch_stats}
+                plain = jax.jit(lambda o, d: jnp.tanh(module.apply(variables, o, training=False).mean + d) * 10.0)
             err, ang, pz, touch = (np.zeros((F, WORLDS)) for _ in range(4))
             pose = np.zeros((F, WORLDS, 1, 7))
             lags = np.stack([d.delay_steps.numpy() for d in env.action.delays], -1)
             for f in range(F):
-                action, key = act_fn(actor, obs, key)
+                if ff_path:
+                    action = plain(obs, offsets[f])
+                else:
+                    action, key = act_fn(actor, obs, key)
                 obs = jax_env.step(action).observation
                 b = env.state_0.body_q.numpy().reshape(WORLDS, nb, 7)
                 pose[f, :, 0] = b[:, obj]
@@ -93,7 +114,7 @@ def main(ckpts):
                 touch[f] = env.contact.contact_active.numpy().reshape(WORLDS, -1).sum(-1) > 0
             e, a = err.mean(0), ang.mean(0)
             off = np.array([next((i for i in range(F - 9) if (err[i:i + 10, w] > 0.10).all()), F) for w in range(WORLDS)])
-            name = "/".join(ck.split("/")[-3:]).replace("checkpoints/", "").replace(".safetensors", "")
+            name = "/".join((ff_path or ck).split("/")[-3:]).replace("checkpoints/", "").replace(".safetensors", "").replace(".npz", "")
             print(f"{name[-40:]} err_cm {q(100 * e)} | deg {q(np.degrees(a))} | P(<3cm) {np.mean(e < 0.03):.2f} P(<5) {np.mean(e < 0.05):.2f} "
                   f"P(<10) {np.mean(e < 0.10):.2f} | SP {np.mean((e <= 0.10) & (a <= 0.5)):.2f} MP {np.mean((e < 0.03) & (a < np.radians(30))):.2f} | "
                   f"off@ {q(off)} | fell {np.mean(pz.min(0) < 0.4):.2f} touch {touch.mean():.2f}", flush=True)

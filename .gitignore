@@ -1,2 +1,3 @@
 checkpoints/*.safetensors
 __pycache__/
+supermimic/assets/
