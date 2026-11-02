@@ -18,6 +18,8 @@ EPISODES = range(30)
 def main(logs: str, out: str) -> None:
     runs = defaultdict(list)
     for root, _, files in os.walk(logs, followlinks=True):
+        if re.search(r"_t2[a-z]*(/|$)", root):  # Tier 2 runs never enter a Tier 1 selection
+            continue
         for name in files:
             m = re.fullmatch(r"episode_(\d{6})\.json", name)
             if not m:

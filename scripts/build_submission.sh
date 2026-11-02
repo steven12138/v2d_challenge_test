@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Select the best checkpoint per episode, give each one fresh official run, and pack a Track 2 Tier 1 CSV. Uploads nothing.
-# usage: build_submission.sh <name> <commit url> [gpu ...]    writes ~/track2/submissions/<name>/
+# Select the best checkpoint per episode, or take the map in env CHECKPOINTS, give each one fresh official run, and pack a Track 2 Tier 1 CSV. Uploads nothing.
+# usage: [CHECKPOINTS=<map.json>] build_submission.sh <name> <commit url> [gpu ...]    writes ~/track2/submissions/<name>/
 set -u
 NAME=$1 URL=$2
 shift 2
@@ -11,7 +11,11 @@ FC=$HOME/video_to_data/robotic_grounding/flash_chord
 HERE=$(cd "$(dirname "$0")" && pwd)
 OUT=$ROOT/submissions/$NAME
 mkdir -p "$OUT/results"
-python3 "$HERE/scan_official.py" "$ROOT/logs" "$OUT/checkpoints.json" > "$OUT/selection.txt" 2>&1
+if [ -n "${CHECKPOINTS:-}" ]; then
+  cp "$CHECKPOINTS" "$OUT/checkpoints.json"
+else
+  python3 "$HERE/scan_official.py" "$ROOT/logs" "$OUT/checkpoints.json" > "$OUT/selection.txt" 2>&1
+fi
 # one evaluator per GPU; each works through its own share of the episodes
 python3 - "$OUT" "${#GPUS[@]}" <<'EOF'
 import json, sys

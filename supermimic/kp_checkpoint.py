@@ -24,7 +24,7 @@ def official_config(config: dict) -> dict:
             stage["objective_weights"].pop("object_keypoints", None)
     for objective in (config["objective"], config["env"]["objective"]):
         objective["_target_"] = OFFICIAL_OBJECTIVE
-        for name in [n for n in objective if n.startswith(("object_keypoints", "finger_grip"))]:
+        for name in [n for n in objective if n.startswith(("object_keypoints", "finger_grip", "action_rate_extra", "action_l2_extra"))]:
             del objective[name]
     return config
 
