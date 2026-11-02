@@ -12,6 +12,8 @@ import sys
 
 GRACE_MOTION = "/scratch/user/the/v2d/t2/work/tier1/assets/human_motion_data/"
 H100_MOTION = "/data/the/nvidia_challenge_track2/retargeted/t1/"
+GRACE_GRASP_MOTION = "/scratch/user/the/v2d/t2/work/tier1/grasp/assets/human_motion_data/"  # hand-refined motion (dex3_grasp.py)
+H100_GRASP_MOTION = "/home/the/track2/data/retargeted_grasp/t1/"
 CONFIG_KEY = "user.resolved_config_json"
 OFFICIAL_OBJECTIVE = "flash_chord.objectives.recon_body.ReconBodyObjectiveConfig"
 
@@ -34,8 +36,8 @@ def convert(src: str, dst: str) -> None:
         weights = fh.read()
     meta = header["__metadata__"]
     config = official_config(json.loads(meta[CONFIG_KEY]))
-    meta[CONFIG_KEY] = json.dumps(config, sort_keys=True).replace(GRACE_MOTION, H100_MOTION)
-    if any(left in meta[CONFIG_KEY] for left in ("keypoints", "finger_grip", "supermimic", GRACE_MOTION)):
+    meta[CONFIG_KEY] = json.dumps(config, sort_keys=True).replace(GRACE_MOTION, H100_MOTION).replace(GRACE_GRASP_MOTION, H100_GRASP_MOTION)
+    if any(left in meta[CONFIG_KEY] for left in ("keypoints", "finger_grip", "supermimic", GRACE_MOTION, GRACE_GRASP_MOTION)):
         raise ValueError(f"{src}: training-only settings are left in the config")
     encoded = json.dumps(header, separators=(",", ":")).encode()
     with open(dst, "wb") as fh:
