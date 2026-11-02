@@ -1,0 +1,337 @@
+diff -urN fc_old/configs/curriculum/recon_body_flash_sac_keypoints.yaml fc_new/configs/curriculum/recon_body_flash_sac_keypoints.yaml
+--- fc_old/configs/curriculum/recon_body_flash_sac_keypoints.yaml	1969-12-31 18:00:00.000000000 -0600
++++ fc_new/configs/curriculum/recon_body_flash_sac_keypoints.yaml	2026-11-01 20:54:18.235701262 -0600
+@@ -0,0 +1,54 @@
++_target_: flash_chord.configuration.make_fixed_curriculum
++
++# Same stages as recon_body_flash_sac.yaml, plus the point-cloud object reward (object_keypoints, weight 3.0;
++# ResMimic, arXiv 2510.05070). The official recipe has no object orientation term at all.
++
++# Environment transitions for the 2,048-world, 350M-step FlashSAC budget.
++# The stage fractions exactly match the stable 20,000-iteration PPO recipe:
++# zero VOC begins at 60%, deployment-exact starts enter at 82.5%, and the
++# terminal mixture remains 50% immediate / 50% uniform recovery starts.
++thresholds: [35000320, 70000640, 104998912, 139999232, 174999552, 209999872, 288749568, 306249728, 349999104]
++
++stages:
++  - _target_: flash_chord.configuration.make_curriculum_stage
++    voc_scale: 1.0
++    objective_weights: &recon_body_weights
++      termination: -300.0
++      action_rate_l2: -0.0001
++      action_l2: -0.000001
++      soft_joint_limit: -0.001
++      pelvis_position: 1.0
++      pelvis_orientation: 1.0
++      body_joint_position: 5.0
++      object_position: 1.0
++      progress: 1.0
++      palm_position: 1.0
++      palm_orientation: 1.0
++      force_closure: 5.0
++      object_keypoints: 3.0
++  - _target_: flash_chord.configuration.make_curriculum_stage
++    voc_scale: 0.75
++    objective_weights: *recon_body_weights
++  - _target_: flash_chord.configuration.make_curriculum_stage
++    voc_scale: 0.5
++    objective_weights: *recon_body_weights
++  - _target_: flash_chord.configuration.make_curriculum_stage
++    voc_scale: 0.25
++    objective_weights: *recon_body_weights
++  - _target_: flash_chord.configuration.make_curriculum_stage
++    voc_scale: 0.1
++    objective_weights: *recon_body_weights
++  - _target_: flash_chord.configuration.make_curriculum_stage
++    voc_scale: 0.05
++    objective_weights: *recon_body_weights
++  - _target_: flash_chord.configuration.make_curriculum_stage
++    voc_scale: 0.0
++    objective_weights: *recon_body_weights
++  - _target_: flash_chord.configuration.make_curriculum_stage
++    voc_scale: 0.0
++    objective_weights: *recon_body_weights
++    immediate_first_frame_probability: 0.25
++  - _target_: flash_chord.configuration.make_curriculum_stage
++    voc_scale: 0.0
++    objective_weights: *recon_body_weights
++    immediate_first_frame_probability: 0.50
+diff -urN fc_old/configs/curriculum/recon_body_flash_sac.yaml fc_new/configs/curriculum/recon_body_flash_sac.yaml
+--- fc_old/configs/curriculum/recon_body_flash_sac.yaml	2026-11-01 20:54:15.547482876 -0600
++++ fc_new/configs/curriculum/recon_body_flash_sac.yaml	2026-11-01 20:54:14.909695389 -0600
+@@ -22,6 +22,7 @@
+       palm_position: 1.0
+       palm_orientation: 1.0
+       force_closure: 5.0
++      object_keypoints: 0.0
+   - _target_: flash_chord.configuration.make_curriculum_stage
+     voc_scale: 0.75
+     objective_weights: *recon_body_weights
+diff -urN fc_old/configs/curriculum/recon_body_ppo.yaml fc_new/configs/curriculum/recon_body_ppo.yaml
+--- fc_old/configs/curriculum/recon_body_ppo.yaml	2026-11-01 20:54:17.535700026 -0600
++++ fc_new/configs/curriculum/recon_body_ppo.yaml	2026-11-01 20:54:16.587698352 -0600
+@@ -24,6 +24,7 @@
+       palm_position: 1.0
+       palm_orientation: 1.0
+       force_closure: 5.0
++      object_keypoints: 0.0
+   - _target_: flash_chord.configuration.make_curriculum_stage
+     voc_scale: 0.75
+     objective_weights: *recon_body_weights
+diff -urN fc_old/configs/experiment/g1_recon_body_kp_flash_sac.yaml fc_new/configs/experiment/g1_recon_body_kp_flash_sac.yaml
+--- fc_old/configs/experiment/g1_recon_body_kp_flash_sac.yaml	1969-12-31 18:00:00.000000000 -0600
++++ fc_new/configs/experiment/g1_recon_body_kp_flash_sac.yaml	2026-11-01 20:54:19.728703900 -0600
+@@ -0,0 +1,88 @@
++# @package _global_
++
++# G1+Dex3/SONIC ReconBody FlashSAC recipe + point-cloud object reward (only the curriculum differs).
++defaults:
++  - override /sim: recon_body
++  - override /collision: physical
++  - override /embodiment: g1_dex3
++  - override /action: sonic_joint_residual
++  - override /observation: recon_body
++  - override /objective: recon_body
++  - override /termination: recon_body
++  - override /reset: recon_body
++  - override /curriculum: recon_body_flash_sac_keypoints
++
++task:
++  motion_speed: 1.0
++  source_frame_playback: true
++  motion_start_frame: 0
++  motion_end_frame: -1
++
++scene:
++  world_count: 2048
++  contact_friction: 1.0
++  object_free_joint_damping: 0.01
++
++action:
++  input_mode: raw
++  normalized_mapping: linear
++
++env:
++  voc:
++    _target_: flash_chord.runtime.object_control.VOCParams
++    k_lin: 50.0
++    d_lin: 10.0
++    k_ang: 10.0
++    d_ang: 0.1
++    max_force: 60.0
++    max_torque: 60.0
++    gravity: 9.81
++    mass_normalized_gains: false
++  contact:
++    _target_: flash_chord.runtime.contact.ContactTrackerConfig
++    sides: [left, right]
++  capture_terminal_state: true
++  enforce_joint_velocity_limits: true
++  critic_context:
++    _target_: flash_chord.envs.rl.CriticContextConfig
++    reference_phase: true
++    object_body_velocity: true
++
++training:
++  total_environment_steps: 349999104
++  updates_per_collection: 4.0
++  resume: false
++  checkpoint_path: null
++  network:
++    actor_hidden_dim: 256
++    critic_hidden_dim: 512
++    actor_head_mode: residual
++    residual_mean_head: zero_dense
++    # A bounded residual retains the raw policy's 0.5-rad initial physical
++    # sigma and exp([-10, 2]) physical standard-deviation envelope.
++    initial_normalized_std: 0.05
++    action_transform: tanh
++    action_scale: 10.0
++    log_std_min: -12.302585092994047
++    log_std_max: -0.3025850929940459
++  optimization:
++    actor_learning_rate_multiplier: 1.0
++    residual_mean_learning_rate_multiplier: 1.0
++  replay:
++    capacity: 10000000
++    minimum_size: 409600
++    n_step: 7
++    clear_on_stage_change: false
++    observation_storage_dtype: float16
++  exploration:
++    # Normalized sigma 0.07 is physical sigma 0.7 after the 10x transform.
++    target_sigma: 0.07
++    warmup_action: policy
++  checkpoint:
++    save_interval_environment_steps: 10000384
++    load_replay_path: null
++
++logging:
++  experiment: g1_sonic_recon_body
++  run_name: g1_recon_body_flash_sac
++  log_interval: 25
+diff -urN fc_old/configs/objective/recon_body.yaml fc_new/configs/objective/recon_body.yaml
+--- fc_old/configs/objective/recon_body.yaml	2026-11-01 20:54:21.497707026 -0600
++++ fc_new/configs/objective/recon_body.yaml	2026-11-01 20:54:20.871705920 -0600
+@@ -11,12 +11,14 @@
+ palm_position_weight: 1.0
+ palm_orientation_weight: 1.0
+ force_closure_weight: 5.0
++object_keypoints_weight: 0.0
+ pelvis_position_std: 0.3
+ pelvis_orientation_std: 0.4
+ body_joint_position_std: 1.0
+ object_position_std: 0.2
+ palm_position_std: 0.2
+ palm_orientation_std: 0.4
++object_keypoints_std: 0.1
+ soft_joint_limit_factor: 0.9
+ force_closure_min_support: 0.01
+ num_wrench_basis: 512
+diff -urN fc_old/lifecycle/curriculum.py fc_new/lifecycle/curriculum.py
+--- fc_old/lifecycle/curriculum.py	2026-11-01 20:54:22.779709293 -0600
++++ fc_new/lifecycle/curriculum.py	2026-11-01 20:54:21.964707852 -0600
+@@ -77,12 +77,17 @@
+     def weights_for(self, term_names: tuple[str, ...]) -> tuple[float, ...]:
+         """Return weights in a strategy's fixed term order after exact name validation."""
+         expected = set(term_names)
+-        actual = set(self.objective_weights)
++        weights = dict(self.objective_weights)
++        if "object_keypoints" in expected and "object_keypoints" not in weights:
++            # tr2: checkpoints trained before the recon_body object_keypoints term was added have no weight for it;
++            # 0 reproduces their objective exactly.
++            weights["object_keypoints"] = 0.0
++        actual = set(weights)
+         if actual != expected:
+             missing = sorted(expected - actual)
+             unexpected = sorted(actual - expected)
+             raise ValueError(f"curriculum objective weights mismatch: missing={missing}, unexpected={unexpected}")
+-        return tuple(self.objective_weights[name] for name in term_names)
++        return tuple(weights[name] for name in term_names)
+ 
+ 
+ @dataclass(frozen=True)
+diff -urN fc_old/objectives/recon_body.py fc_new/objectives/recon_body.py
+--- fc_old/objectives/recon_body.py	2026-11-01 20:54:23.787711076 -0600
++++ fc_new/objectives/recon_body.py	2026-11-01 20:54:23.132709917 -0600
+@@ -36,8 +36,10 @@
+     "palm_position",
+     "palm_orientation",
+     "force_closure",
++    "object_keypoints",
+ )
+-_RECON_BODY_OBJECTIVE_TERM_COUNT = wp.constant(12)
++_RECON_BODY_OBJECTIVE_TERM_COUNT = wp.constant(13)
++
+ 
+ 
+ @dataclass(frozen=True)
+@@ -56,12 +58,14 @@
+     palm_position_weight: float = 1.0
+     palm_orientation_weight: float = 1.0
+     force_closure_weight: float = 5.0
++    object_keypoints_weight: float = 0.0  # 0 keeps the official recipe; see curriculum recon_body_flash_sac_keypoints
+     pelvis_position_std: float = 0.3
+     pelvis_orientation_std: float = 0.4
+     body_joint_position_std: float = 1.0
+     object_position_std: float = 0.2
+     palm_position_std: float = 0.2
+     palm_orientation_std: float = 0.4
++    object_keypoints_std: float = 0.1
+     soft_joint_limit_factor: float = 0.9
+     force_closure_min_support: float = 0.01
+     num_wrench_basis: int = 512
+@@ -78,6 +82,7 @@
+             self.object_position_std,
+             self.palm_position_std,
+             self.palm_orientation_std,
++            self.object_keypoints_std,
+             self.force_closure_min_support,
+             self.friction_coefficient,
+         )
+@@ -92,6 +97,7 @@
+                 self.object_position_std,
+                 self.palm_position_std,
+                 self.palm_orientation_std,
++                self.object_keypoints_std,
+             )
+         ):
+             raise ValueError("ReconBody shaping standard deviations must be positive")
+@@ -118,6 +124,7 @@
+             self.palm_position_weight,
+             self.palm_orientation_weight,
+             self.force_closure_weight,
++            self.object_keypoints_weight,
+         )
+ 
+     def build(
+@@ -208,6 +215,8 @@
+     soft_upper: wp.array(dtype=wp.float32),
+     object_body_id: int,
+     object_target_pos_w: wp.array(dtype=wp.vec3),
++    object_target_quat_w: wp.array(dtype=wp.quat),
++    object_radius: wp.array(dtype=wp.float32),
+     pelvis_body_id: int,
+     num_frames: int,
+     bodies_per_world: int,
+@@ -220,6 +229,7 @@
+     object_position_std: float,
+     palm_position_std: float,
+     palm_orientation_std: float,
++    object_keypoints_std: float,
+     weights: wp.array(dtype=wp.float32),
+     frame_dt: float,
+     terms: wp.array(dtype=wp.float32),
+@@ -273,10 +283,25 @@
+         joint_sse += error * error
+     terms[term_base + 6] = wp.exp(-joint_sse / (body_joint_position_std * body_joint_position_std))
+ 
+-    object_position = wp.transform_get_translation(body_q[body_base + object_body_id])
++    object_xf = body_q[body_base + object_body_id]
++    object_position = wp.transform_get_translation(object_xf)
+     object_error = object_position - object_target_pos_w[world]
+     terms[term_base + 7] = wp.exp(-wp.dot(object_error, object_error) / (object_position_std * object_position_std))
+ 
++    # Point-cloud object reward (ResMimic, arXiv 2510.05070): 6 keypoints at +-radius along the object axes.
++    # Their distance to the reference keypoints covers translation and rotation, like the ADD/MPPE metrics.
++    object_rotation = wp.transform_get_rotation(object_xf)
++    target_rotation = object_target_quat_w[world]
++    keypoint_sse = float(0.0)  # noqa: UP018
++    for keypoint in range(6):
++        offset = wp.vec3(0.0, 0.0, 0.0)
++        offset[keypoint % 3] = object_radius[world] * (1.0 - 2.0 * float(keypoint // 3))
++        keypoint_error = (object_position + wp.quat_rotate(object_rotation, offset)) - (
++            object_target_pos_w[world] + wp.quat_rotate(target_rotation, offset)
++        )
++        keypoint_sse += wp.dot(keypoint_error, keypoint_error)
++    terms[term_base + 12] = wp.exp(-(keypoint_sse / 6.0) / (object_keypoints_std * object_keypoints_std))
++
+     denominator = num_frames - 1 - episode_start_frame[world]
+     progress = float(1.0)  # noqa: UP018
+     if denominator > 0:
+@@ -465,6 +490,8 @@
+         return RECON_BODY_OBJECTIVE_TERM_NAMES
+ 
+     def set_weights(self, weights: Mapping[str, float]) -> None:
++        # tr2: checkpoints trained before object_keypoints existed carry no weight for it; 0 is their objective.
++        weights = {"object_keypoints": 0.0, **weights}
+         if set(weights) != set(self.term_names):
+             raise ValueError(
+                 f"ReconBody objective weights must contain exactly {self.term_names}, got {tuple(weights)}"
+@@ -540,6 +567,8 @@
+                 self.soft_upper,
+                 self.object_body_id,
+                 self.command.body_target_pos_w,
++                self.command.body_target_quat_w,
++                self.command.object_radius,
+                 self.pelvis_body_id,
+                 self.num_frames,
+                 self.bodies_per_world,
+@@ -552,6 +581,7 @@
+                 self.config.object_position_std,
+                 self.config.palm_position_std,
+                 self.config.palm_orientation_std,
++                self.config.object_keypoints_std,
+                 self.weights,
+                 self.frame_dt,
+             ],
